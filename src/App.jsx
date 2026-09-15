@@ -45,6 +45,7 @@ import {
 --------------------------------------------------------------- */
 
 const SUPABASE_URL = "https://oymdanzmnpvfwzoawvua.supabase.co";
+const APP_URL = "https://jourmalism.vercel.app";
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95bWRhbnptbnB2Znd6b2F3dnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNzIwMTYsImV4cCI6MjEwNDk0ODAxNn0.mHAQnKCPWzxWqV6d_M2-0hWZC8pJ3IyAjFOorgFxL4o";
 
@@ -90,7 +91,7 @@ class SupabaseClient {
   }
 
   async signup(username, email, password) {
-    const data = await this._authRequest("POST", "/signup", {
+    const data = await this._authRequest("POST", `/signup?redirect_to=${encodeURIComponent(APP_URL)}`, {
       email,
       password,
       data: { username: username.toLowerCase() },
