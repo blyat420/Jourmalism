@@ -25,6 +25,19 @@ import {
   ArrowLeft,
   MoreVertical,
   Clock3,
+  Camera,
+  ChevronRight,
+  Lock,
+  Bell,
+  Globe,
+  Users,
+  Search,
+  Trophy,
+  UserPlus,
+  UserCheck,
+  UserX,
+  MessageCircle,
+  Heart,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------
@@ -76,16 +89,23 @@ class SupabaseClient {
     return data;
   }
 
-  async signup(email, password) {
-    const data = await this._authRequest("POST", "/signup", { email, password });
+  async signup(username, email, password) {
+    const data = await this._authRequest("POST", "/signup", {
+      email,
+      password,
+      data: { username: username.toLowerCase() },
+    });
     this.session = data.session;
     localStorage.setItem("sb-session", JSON.stringify(data.session));
     return data.user;
   }
 
   async login(email, password) {
+    const loginEmail = email.includes("@")
+      ? email
+      : await this.lookupEmailByUsername(email);
     const data = await this._authRequest("POST", "/token?grant_type=password", {
-      email,
+      email: loginEmail,
       password,
     });
     this.session = data;
@@ -93,10 +113,61 @@ class SupabaseClient {
     return data.user;
   }
 
+  async lookupEmailByUsername(username) {
+    const result = await this._request("POST", "/rpc/get_email_by_username", { lookup_username: username.toLowerCase() });
+    if (!result) throw new Error("Username not found");
+    return result;
+  }
+
+  async searchProfiles(username) {
+    return await this._request("POST", "/rpc/search_profiles", {
+      search_username: username.toLowerCase(),
+    });
+  }
+
+  async sendFriendRequest(userId) {
+    return await this._request("POST", "/rpc/send_friend_request", { target_user_id: userId });
+  }
+
+  async getPendingFriendRequests() {
+    return await this._request("POST", "/rpc/get_pending_friend_requests");
+  }
+
+  async respondFriendRequest(requestId, status) {
+    return await this._request("POST", "/rpc/respond_friend_request", {
+      request_id: requestId,
+      next_status: status,
+    });
+  }
+
+  async getFriends() {
+    return await this._request("POST", "/rpc/get_friends");
+  }
+
+  async removeFriend(userId) {
+    return await this._request("POST", "/rpc/remove_friend", { friend_user_id: userId });
+  }
+
+  async getCurrentHealth() {
+    const result = await this._request("POST", "/rpc/get_current_health");
+    return result?.[0] || { health_points: 100, missed_habits: 0 };
+  }
+
+  async updateUsername(userId, email, username) {
+    return await this.from("profiles").upsert({ id: userId, email, username: username.toLowerCase() });
+  }
+
   async getSession() {
     const stored = localStorage.getItem("sb-session");
     if (stored) {
       this.session = JSON.parse(stored);
+      if (this.session.expires_at && this.session.expires_at * 1000 <= Date.now() + 60000) {
+        const data = await this._authRequest("POST", "/token?grant_type=refresh_token", {
+          refresh_token: this.session.refresh_token,
+        });
+        this.session = data;
+        localStorage.setItem("sb-session", JSON.stringify(data));
+      }
       return this.session;
     }
     return null;
@@ -117,6 +188,30 @@ class SupabaseClient {
     });
     if (!res.ok) return null;
     return await res.json();
+  }
+
+  async updateUser(attributes) {
+    return await this._authRequestWithSession("PUT", "/user", attributes);
+  }
+
+  async deleteUser() {
+    return await this._authRequestWithSession("DELETE", "/user");
+  }
+
+  async _authRequestWithSession(method, path, body = null) {
+    const res = await fetch(`${this.url}/auth/v1${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        apikey: this.key,
+        Authorization: `Bearer ${this.session?.access_token}`,
+      },
+      body: body ? JSON.stringify(body) : null,
+    });
+    const responseText = await res.text();
+    const data = responseText ? JSON.parse(responseText) : null;
+    if (!res.ok) throw new Error(data?.message || data?.error_description || `HTTP ${res.status}`);
+    return data;
   }
 
   from(table) {
@@ -146,6 +241,10 @@ class Table {
     if (!this.query) this.query = { select: "*", filters: [] };
     this.query.filters.push({ type: "in", col, vals });
     return this;
+  }
+
+  async execute() {
+    return await this._exec();
   }
 
   async single() {
@@ -187,8 +286,12 @@ class Table {
   async update(data) {
     let path = `/${this.name}`;
     if (this.query?.filters?.length) {
+      let separator = "?";
       for (const f of this.query.filters) {
-        if (f.type === "eq") path += `?${f.col}=eq.${encodeURIComponent(f.val)}`;
+        if (f.type === "eq") {
+          path += `${separator}${f.col}=eq.${encodeURIComponent(f.val)}`;
+          separator = "&";
+        }
       }
     }
     return await this.client._request("PATCH", path, data);
@@ -197,8 +300,12 @@ class Table {
   async delete() {
     let path = `/${this.name}`;
     if (this.query?.filters?.length) {
+      let separator = "?";
       for (const f of this.query.filters) {
-        if (f.type === "eq") path += `?${f.col}=eq.${encodeURIComponent(f.val)}`;
+        if (f.type === "eq") {
+          path += `${separator}${f.col}=eq.${encodeURIComponent(f.val)}`;
+          separator = "&";
+        }
       }
     }
     return await this.client._request("DELETE", path);
@@ -372,11 +479,13 @@ function ReminderModal({ t, habit, onClose, onSave }) {
 function HabitDetailScreen({ t, habit, onClose, onSaveNote, onSaveReminder }) {
   const [note, setNote] = useState(habit.notes || "");
   const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState(null);
   const [reminderOpen, setReminderOpen] = useState(false);
   const reminder = { ...DEFAULT_REMINDER, ...(habit.reminderSettings || {}) };
   const reminderSummary = reminder.frequency === "every day"
     ? `Every day at ${reminder.hour}:${reminder.minute} ${reminder.period}`
     : `${reminder.activeDays?.filter(Boolean).join(", ") || "Selected days"} at ${reminder.hour}:${reminder.minute} ${reminder.period}`;
+  const streakActive = habit.streak >= 2;
   const recentDates = last7Dates();
   const completedDates = new Set(habit.completedDates || []);
 
@@ -390,13 +499,24 @@ function HabitDetailScreen({ t, habit, onClose, onSaveNote, onSaveReminder }) {
 
   const handleSave = async () => {
     setSaving(true);
-    await onSaveNote(habit.id, note);
+    const saved = await onSaveNote(habit.id, note);
+    setSaveMessage(saved
+      ? { message: "Notes saved", type: "success", icon: CheckCircle }
+      : { message: "Failed to save note", type: "error", icon: AlertCircle });
     setSaving(false);
   };
 
   return (
     <div className={`min-h-screen ${t.canvas} flex flex-col absolute inset-0 z-50 animate-[slideIn_0.2s_ease-out]`}>
       <style>{`@keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
+      {saveMessage && (
+        <Toast
+          message={saveMessage.message}
+          type={saveMessage.type}
+          icon={saveMessage.icon}
+          onClose={() => setSaveMessage(null)}
+        />
+      )}
 
       <div className="flex items-center justify-between px-5 pt-5 pb-4">
         <div className="flex items-center gap-4">
@@ -413,8 +533,8 @@ function HabitDetailScreen({ t, habit, onClose, onSaveNote, onSaveReminder }) {
       <div className="px-5 flex-1 overflow-y-auto pb-28">
         <section className={`rounded-[24px] ${t.card} border ${t.border} shadow-sm px-5 pt-5 pb-4 mb-6`}>
           <div className="flex items-center justify-between mb-4">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 dark:bg-orange-500/15 px-3 py-1 text-xs font-semibold text-orange-600 dark:text-orange-300">
-              <Flame size={13} fill="currentColor" /> Active Streak
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${streakActive ? "bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300" : `${t.badge} ${t.textMuted}`}`}>
+              <Flame size={13} fill={streakActive ? "currentColor" : "none"} /> {streakActive ? "Active Streak" : "Streak Off"}
             </span>
             <div className="text-right">
               <p className={`text-[11px] ${t.textMuted}`}>Personal Best</p>
@@ -600,6 +720,171 @@ function Toast({ message, type = "info", icon: Icon, onClose }) {
   );
 }
 
+function AccountSettings({ t, user, language, onLanguageChange, onUpdateProfile, onUpdateUsername, onDeleteAccount, onLogout, onClose }) {
+  const [username, setUsername] = useState(user?.user_metadata?.username || user?.email?.split("@")[0] || "user");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const [message, setMessage] = useState(null);
+  const fileRef = useRef(null);
+  const avatarUrl = user?.user_metadata?.avatar_url;
+  const displayName = user?.user_metadata?.username || user?.email?.split("@")[0] || "User";
+
+  const notify = (text, type = "success") => {
+    setMessage({ text, type });
+    window.setTimeout(() => setMessage(null), 3500);
+  };
+
+  const handleAvatar = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      setSavingAvatar(true);
+      const avatar = await compressImage(file);
+      await onUpdateProfile({ data: { avatar_url: avatar } });
+      notify(language === "id" ? "Foto profil diperbarui" : "Profile photo updated");
+    } catch (err) {
+      notify(err.message || "Failed to update profile photo", "error");
+    } finally {
+      setSavingAvatar(false);
+      event.target.value = "";
+    }
+  };
+
+  const handlePassword = async (event) => {
+    event.preventDefault();
+    if (password.length < 6) {
+      notify(language === "id" ? "Password minimal 6 karakter" : "Password must be at least 6 characters", "error");
+      return;
+    }
+    if (password !== confirmPassword) {
+      notify(language === "id" ? "Konfirmasi password tidak cocok" : "Passwords do not match", "error");
+      return;
+    }
+    try {
+      setSavingPassword(true);
+      await onUpdateProfile({ password });
+      setPassword("");
+      setConfirmPassword("");
+      notify(language === "id" ? "Password diperbarui" : "Password updated");
+    } catch (err) {
+      notify(err.message || "Failed to update password", "error");
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const english = language === "en";
+  const text = english
+    ? { title: "Account Settings", changePhoto: "Tap to change photo", preferences: "PREFERENCES & SECURITY", username: "Username", usernameHint: "This is how others identify you", saveUsername: "Save username", password: "Change Password", passwordHint: "Use at least 6 characters", newPassword: "New password", confirm: "Confirm password", notifications: "Notifications", language: "Language", account: "ACCOUNT MANAGEMENT", delete: "Delete Account", deleteHint: "Permanently erase data", logout: "Log Out", updated: "Updated now" }
+    : { title: "Pengaturan Akun", changePhoto: "Ketuk untuk mengganti foto", preferences: "PREFERENSI & KEAMANAN", username: "Username", usernameHint: "Nama yang digunakan untuk identitas", saveUsername: "Simpan username", password: "Ganti Password", passwordHint: "Gunakan minimal 6 karakter", newPassword: "Password baru", confirm: "Konfirmasi password", notifications: "Notifikasi", language: "Bahasa", account: "MANAJEMEN AKUN", delete: "Hapus Akun", deleteHint: "Hapus data secara permanen", logout: "Keluar", updated: "Diperbarui sekarang" };
+
+  const handleUsername = async (event) => {
+    event.preventDefault();
+    const nextUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,24}$/.test(nextUsername)) {
+      notify(english ? "Use 3-24 letters, numbers, or underscores" : "Gunakan 3-24 huruf, angka, atau garis bawah", "error");
+      return;
+    }
+    try {
+      await onUpdateUsername(nextUsername);
+      setUsername(nextUsername);
+      notify(english ? "Username updated" : "Username diperbarui");
+    } catch (err) {
+      const isUsernameConflict = err.code === "23505"
+        || err.message?.includes("profiles_pkey")
+        || err.message?.includes("profiles_username_key")
+        || err.message?.toLowerCase().includes("duplicate key");
+      notify(
+        isUsernameConflict
+          ? (english ? "This username is already taken. Please choose another." : "Username ini sudah digunakan. Silakan pilih username lain.")
+          : (err.message || (english ? "Failed to update username" : "Username gagal diperbarui")),
+        "error"
+      );
+    }
+  };
+
+  return (
+    <div className={`min-h-screen ${t.canvas} absolute inset-0 z-50 overflow-y-auto`}>
+      {message && (
+        <Toast message={message.text} type={message.type} icon={message.type === "error" ? AlertCircle : CheckCircle} onClose={() => setMessage(null)} />
+      )}
+      <div className="px-5 pt-5 pb-10">
+        <div className="flex items-center justify-center relative mb-7">
+          <button onClick={onClose} aria-label="Back" className={`absolute left-0 w-9 h-9 rounded-full border ${t.border} ${t.card} flex items-center justify-center ${t.textPrimary}`}>
+            <ArrowLeft size={18} />
+          </button>
+          <h1 className={`text-base font-bold ${t.textPrimary}`}>{text.title}</h1>
+        </div>
+
+        <div className="text-center mb-8">
+          <button onClick={() => fileRef.current?.click()} disabled={savingAvatar} className="relative inline-flex group">
+            <div className={`w-24 h-24 rounded-full overflow-hidden flex items-center justify-center ${t.card} border-2 ${t.border} shadow-sm`}>
+              {avatarUrl ? <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" /> : <User size={42} className={t.textPrimary} fill="currentColor" strokeWidth={1} />}
+            </div>
+            <span className="absolute right-0 bottom-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center border-2 border-white">
+              {savingAvatar ? <Loader size={15} className="animate-spin" /> : <Camera size={15} />}
+            </span>
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatar} />
+          <p className="text-xs font-semibold text-blue-600 mt-2">{text.changePhoto}</p>
+          <h2 className={`text-lg font-bold ${t.textPrimary} mt-4`}>{displayName}</h2>
+          <p className={`text-xs ${t.textMuted} mt-1`}>{user?.email}</p>
+        </div>
+
+        <p className={`text-[11px] font-bold tracking-wide ${t.textMuted} mb-2 px-2`}>{text.preferences}</p>
+        <div className={`${t.card} border ${t.border} rounded-2xl overflow-hidden mb-7`}>
+          <form onSubmit={handleUsername} className={`p-4 border-b ${t.border}`}>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center"><User size={17} /></span>
+              <div><p className={`text-sm font-medium ${t.textPrimary}`}>{text.username}</p><p className={`text-[11px] ${t.textMuted}`}>{text.usernameHint}</p></div>
+            </div>
+            <div className="flex gap-2">
+              <input type="text" value={username} onChange={(event) => setUsername(event.target.value.replace(/\s/g, ""))} className={`min-w-0 flex-1 rounded-xl ${t.inputBg} border ${t.border} px-3 py-2.5 text-sm ${t.textPrimary} outline-none focus:border-blue-500`} />
+              <button type="submit" className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white">{text.saveUsername}</button>
+            </div>
+          </form>
+          <form onSubmit={handlePassword} className={`p-4 border-b ${t.border}`}>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><Lock size={17} /></span>
+              <div><p className={`text-sm font-medium ${t.textPrimary}`}>{text.password}</p><p className={`text-[11px] ${t.textMuted}`}>{text.passwordHint}</p></div>
+            </div>
+            <div className="grid gap-2">
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={text.newPassword} className={`w-full rounded-xl ${t.inputBg} border ${t.border} px-3 py-2.5 text-sm ${t.textPrimary} outline-none focus:border-blue-500`} />
+              <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder={text.confirm} className={`w-full rounded-xl ${t.inputBg} border ${t.border} px-3 py-2.5 text-sm ${t.textPrimary} outline-none focus:border-blue-500`} />
+              <button type="submit" disabled={savingPassword || !password} className="justify-self-end rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{savingPassword ? "Saving..." : "Save password"}</button>
+            </div>
+          </form>
+          <div className={`flex items-center gap-3 p-4 border-b ${t.border}`}>
+            <span className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center"><Bell size={17} /></span>
+            <span className={`text-sm ${t.textPrimary} flex-1`}>{text.notifications}</span>
+            <span className="w-9 h-5 rounded-full bg-blue-600 relative"><span className="absolute right-0.5 top-0.5 w-4 h-4 rounded-full bg-white" /></span>
+          </div>
+          <div className="flex items-center gap-3 p-4">
+            <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center"><Globe size={17} /></span>
+            <span className={`text-sm ${t.textPrimary} flex-1`}>{text.language}</span>
+            <select value={language} onChange={(event) => onLanguageChange(event.target.value)} className={`bg-transparent text-xs ${t.textMuted} outline-none`}>
+              <option value="en">English</option>
+              <option value="id">Bahasa Indonesia</option>
+            </select>
+          </div>
+        </div>
+
+        <p className={`text-[11px] font-bold tracking-wide ${t.textMuted} mb-2 px-2`}>{text.account}</p>
+        <div className={`${t.card} border ${t.border} rounded-2xl overflow-hidden mb-7`}>
+          <button onClick={onDeleteAccount} className="w-full flex items-center gap-3 p-4 text-left">
+            <span className="w-9 h-9 rounded-xl bg-red-50 text-red-500 flex items-center justify-center"><Trash2 size={17} /></span>
+            <span className="flex-1"><span className="block text-sm text-red-500">{text.delete}</span><span className={`block text-[11px] ${t.textMuted}`}>{text.deleteHint}</span></span>
+            <ChevronRight size={17} className={t.textMuted} />
+          </button>
+        </div>
+        <button onClick={onLogout} className="w-full rounded-2xl border border-red-200 bg-red-50 py-3 text-sm font-bold text-red-500 flex items-center justify-center gap-2"><LogOut size={16} />{text.logout}</button>
+      </div>
+    </div>
+  );
+}
+
 function useToast() {
   const [toasts, setToasts] = useState([]);
 
@@ -669,8 +954,47 @@ function useTheme() {
    Auth Screens
 --------------------------------------------------------------- */
 
-function LoginScreen({ t, onLoginSuccess }) {
-  const [mode, setMode] = useState("choose"); // "choose" | "login" | "signup" | "verify"
+function StartingScreen({ t, onGetStarted, onSignIn }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  return (
+    <div className={`min-h-screen ${t.canvas} flex items-center justify-center p-4`}>
+      <style>{`@keyframes floatBubble { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -9px); } }`}</style>
+      <div className={`w-full max-w-md min-h-[720px] ${t.card} border ${t.border} rounded-[42px] shadow-xl px-7 py-6 flex flex-col overflow-hidden`}>
+        <div className="flex items-center justify-between text-[11px] font-bold text-slate-900 px-2">
+          <span>9:41</span>
+          <div className="w-24 h-5 rounded-full bg-slate-950" />
+          <span className="tracking-widest">•••</span>
+        </div>
+
+        <div className="relative flex-1 flex items-center justify-center min-h-[365px]">
+          <div className="absolute top-16 left-1/2 z-10 rounded-full bg-slate-900 text-white text-xs px-4 py-2 shadow-lg" style={{ animation: "floatBubble 3.4s ease-in-out infinite" }}>
+            Siap Jadi Sigma?
+            <span className="absolute left-1/2 top-full -translate-x-1/2 border-x-[8px] border-x-transparent border-t-[8px] border-t-slate-900" />
+          </div>
+          <div className="w-64 h-64 rounded-full bg-blue-50/80 flex items-center justify-center overflow-hidden">
+            {!imageFailed ? (
+              <img src="/cat.png" alt="A cat ready to build habits" onError={() => setImageFailed(true)} className="w-[88%] h-[88%] object-contain" />
+            ) : (
+              <div className="text-center text-slate-400 text-sm px-8">Add the cat PNG as <strong>/cat.png</strong></div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-1">
+          <h1 className="text-[34px] leading-[0.98] font-extrabold tracking-tight text-slate-950">Small habits<br />Big changes<span className="text-blue-600">.</span></h1>
+          <p className="mt-6 text-[16px] leading-6 text-slate-500">Train your daily focus, track your fitness streaks, and master your life one rep at a time using <strong>JOURMAL.</strong></p>
+          <button onClick={onGetStarted} className="mt-9 w-full h-14 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold shadow-lg shadow-blue-600/25">Get Started <span className="ml-2 text-lg">→</span></button>
+          <p className="text-center text-sm text-slate-500 mt-4">Already have an account? <button onClick={onSignIn} className="font-bold text-blue-600">Sign In</button></p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LegacyLoginScreen({ t, onLoginSuccess, initialMode = "choose" }) {
+  const [mode, setMode] = useState(initialMode); // "choose" | "login" | "signup" | "verify"
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -683,16 +1007,16 @@ function LoginScreen({ t, onLoginSuccess }) {
     setLoading(true);
     try {
       if (mode === "signup") {
-        await supabase.signup(email, password);
+        await supabase.signup(username, email, password);
         show(`Verification email sent to ${email}`, "success", CheckCircle);
         setMode("verify");
+        setUsername("");
         setEmail("");
         setPassword("");
       } else {
         await supabase.login(email, password);
         const user = await supabase.getUser();
         if (user) {
-          show("Welcome back!", "success", CheckCircle);
           onLoginSuccess(user);
         }
       }
@@ -765,7 +1089,7 @@ function LoginScreen({ t, onLoginSuccess }) {
         ))}
         <div className="w-full max-w-md">
           <div className="mb-12 text-center">
-            <h1 className={`text-3xl font-bold ${t.textPrimary} mb-2`}>Routine</h1>
+            <h1 className={`text-3xl font-bold ${t.textPrimary} mb-2`}>Jourmal</h1>
             <p className={`text-sm ${t.textSecondary}`}>
               Build habits, track progress, reflect daily
             </p>
@@ -777,6 +1101,7 @@ function LoginScreen({ t, onLoginSuccess }) {
               onClick={() => {
                 setMode("login");
                 setError("");
+                setUsername("");
                 setEmail("");
                 setPassword("");
               }}
@@ -790,6 +1115,7 @@ function LoginScreen({ t, onLoginSuccess }) {
               onClick={() => {
                 setMode("signup");
                 setError("");
+                setUsername("");
                 setEmail("");
                 setPassword("");
               }}
@@ -831,7 +1157,7 @@ function LoginScreen({ t, onLoginSuccess }) {
             ← Back
           </button>
           <h1 className={`text-2xl font-bold ${t.textPrimary} mb-1`}>
-            {isSignup ? "Join Routine" : "Welcome back"}
+            {isSignup ? "Join Jourmal" : "Welcome back"}
           </h1>
           <p className={`text-sm ${t.textSecondary}`}>
             {isSignup
@@ -841,16 +1167,33 @@ function LoginScreen({ t, onLoginSuccess }) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isSignup && (
+            <div>
+              <label className={`text-xs font-semibold tracking-wide ${t.textMuted} mb-2 block uppercase`}>
+                Username
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.replace(/\s/g, ""))}
+                placeholder="yourusername"
+                required
+                autoFocus
+                className={`w-full rounded-xl px-3.5 py-3 text-sm ${t.inputBg} border ${t.inputBorder} ${t.textPrimary} outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+              />
+            </div>
+          )}
+
           {/* Email */}
           <div>
             <label className={`text-xs font-semibold tracking-wide ${t.textMuted} mb-2 block uppercase`}>
-              Email
+              {isSignup ? "Email" : "Email / Username"}
             </label>
             <input
-              type="email"
+              type={isSignup ? "email" : "text"}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder={isSignup ? "you@example.com" : ""}
+              placeholder={isSignup ? "you@example.com" : "Email or username"}
               required
               autoFocus
               className={`w-full rounded-xl px-3.5 py-3 text-sm ${t.inputBg} border ${t.inputBorder} ${t.textPrimary} outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
@@ -910,15 +1253,122 @@ function LoginScreen({ t, onLoginSuccess }) {
   );
 }
 
+function LoginScreen({ t, onLoginSuccess, initialMode = "login" }) {
+  const [mode, setMode] = useState(initialMode === "signup" ? "signup" : "login");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const { toasts, show, remove } = useToast();
+  const isSignup = mode === "signup";
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setError("");
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      if (isSignup) {
+        await supabase.signup(username, email, password);
+        show(`Verification email sent to ${email}`, "success", CheckCircle);
+      } else {
+        await supabase.login(email, password);
+        const user = await supabase.getUser();
+        if (user) onLoginSuccess(user);
+      }
+    } catch (err) {
+      setError(err.message);
+      show(err.message, "error", AlertCircle);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <style>{`
+        @keyframes authPanelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes authFieldIn { from { opacity: 0; max-height: 0; transform: translateY(-8px); } to { opacity: 1; max-height: 100px; transform: translateY(0); } }
+      `}</style>
+      {toasts.map((toast) => (
+        <Toast key={toast.id} message={toast.message} type={toast.type} icon={toast.icon} onClose={() => remove(toast.id)} />
+      ))}
+      <div className="w-full max-w-[390px] min-h-[760px] rounded-[40px] bg-white shadow-2xl px-6 pt-8 pb-7 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-900 mb-10">
+          <span>9:41</span>
+          <div className="w-24 h-5 rounded-full bg-black" />
+          <span className="tracking-widest">•••</span>
+        </div>
+
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 mx-auto flex items-center justify-center overflow-hidden shadow-sm">
+            <img src="/cat.png" alt="Jourmal" className="w-full h-full object-cover" />
+          </div>
+          <h1 className="mt-4 text-[28px] leading-none font-extrabold tracking-tight text-slate-900">Jourmal<span className="text-blue-600">.</span></h1>
+          <p className="mt-3 text-sm leading-5 text-slate-500">Build habits, track progress, reflect<br />daily</p>
+        </div>
+
+        <div className="relative mt-7 h-12 rounded-2xl bg-slate-100 p-1 flex">
+          <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-white shadow-sm transition-transform duration-300 ease-out ${isSignup ? "translate-x-full" : "translate-x-0"}`} />
+          <button type="button" onClick={() => switchMode("login")} className={`relative z-10 w-1/2 text-sm font-semibold transition-colors duration-300 ${!isSignup ? "text-slate-900" : "text-slate-500"}`}>Sign In</button>
+          <button type="button" onClick={() => switchMode("signup")} className={`relative z-10 w-1/2 text-sm font-semibold transition-colors duration-300 ${isSignup ? "text-slate-900" : "text-slate-500"}`}>Create Account</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-8 flex-1">
+          <div className="space-y-4" style={{ animation: "authPanelIn 0.35s ease-out" }}>
+            {isSignup && (
+              <div style={{ animation: "authFieldIn 0.3s ease-out" }}>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">Username</label>
+                <input type="text" value={username} onChange={(event) => setUsername(event.target.value.replace(/\s/g, ""))} placeholder="yourusername" required className="w-full h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-2">{isSignup ? "Email address" : "Email / Username"}</label>
+              <input type={isSignup ? "email" : "text"} value={email} onChange={(event) => setEmail(event.target.value)} placeholder={isSignup ? "you@example.com" : "you@example.com or username"} required autoFocus className="w-full h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-semibold text-slate-700">Password</label>
+                {!isSignup && <button type="button" className="text-xs font-semibold text-blue-600">Forgot password?</button>}
+              </div>
+              <div className="relative">
+                <input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={isSignup ? "At least 8 characters" : "••••••••••••"} required className="w-full h-12 rounded-2xl border border-slate-200 bg-white px-4 pr-12 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label="Toggle password visibility" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{showPassword ? "Hide" : "Show"}</button>
+              </div>
+            </div>
+          </div>
+
+          {error && <div className="mt-4 rounded-xl bg-red-50 border border-red-100 px-3 py-2.5 text-xs font-medium text-red-600">{error}</div>}
+          <button type="submit" disabled={loading} className="mt-7 w-full h-14 rounded-2xl bg-blue-600 text-white text-sm font-bold shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 transition-all duration-200 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-60">
+            {loading && <Loader size={15} className="animate-spin" />}
+            {isSignup ? "Create account" : "Sign in"}<span className="text-lg">→</span>
+          </button>
+        </form>
+
+        <div className="mt-7 pt-5 border-t border-slate-200 text-center text-xs text-slate-500">
+          {isSignup ? <>Already have an account? <button type="button" onClick={() => switchMode("login")} className="font-bold text-blue-600">Sign In</button></> : <>Don't have an account? <button type="button" onClick={() => switchMode("signup")} className="font-bold text-blue-600">Create account</button></>}
+          <div className="mt-5 pt-4 border-t border-slate-100 text-[11px] leading-5 text-slate-400">◉ &nbsp; Verification email required.<br />We'll send a confirmation link to verify your identity.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------------------------------------------------------
    Header
 --------------------------------------------------------------- */
 
-function Header({ t, isDark, onToggleTheme, completedCount, totalCount, user, onLogout }) {
+function Header({ t, isDark, onToggleTheme, completedCount, totalCount, user, onLogout, onProfileClick, onOpenSocial, socialNotification, health }) {
   const pct = totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
 
   // Extract the username from the email to display "Hi, [Name]!"
-  const rawName = user?.email?.split('@')[0] || 'User';
+  const rawName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'User';
   const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
 
   return (
@@ -928,9 +1378,12 @@ function Header({ t, isDark, onToggleTheme, completedCount, totalCount, user, on
         
         {/* User Info */}
         <div className="flex items-center gap-3.5">
-          <div className={`w-[52px] h-[52px] rounded-full flex items-center justify-center ${t.card} shrink-0 shadow-sm border ${t.border}`}>
-            <User size={26} className={t.textPrimary} fill="currentColor" strokeWidth={1} />
-          </div>
+          <button onClick={onProfileClick} aria-label="Open account settings" className={`relative w-[52px] h-[52px] rounded-full overflow-visible flex items-center justify-center ${t.card} shrink-0 shadow-sm border ${t.border}`}>
+            {user?.user_metadata?.avatar_url ? <img src={user.user_metadata.avatar_url} alt="Profile" className="h-full w-full rounded-full object-cover" /> : <User size={26} className={t.textPrimary} fill="currentColor" strokeWidth={1} />}
+            <span className="absolute -right-1 -bottom-1 w-5 h-5 rounded-full bg-blue-600 text-white border-2 border-white flex items-center justify-center shadow-sm">
+              <PenLine size={10} strokeWidth={2.5} />
+            </span>
+          </button>
           <div>
             <h1 className={`text-xl font-bold ${t.textPrimary} tracking-tight`}>
               Hi, {displayName}!
@@ -960,20 +1413,47 @@ function Header({ t, isDark, onToggleTheme, completedCount, totalCount, user, on
         </div>
       </div>
 
-      {/* Daily Goal Progress Bar */}
-      <div className={`rounded-2xl ${t.card} border ${t.border} shadow-sm p-4`}>
-        <div className="flex items-center justify-between mb-2.5">
-          <span className={`text-sm font-medium ${t.textSecondary}`}>Daily goal</span>
-          <span className="text-sm font-semibold text-blue-600">
-            {completedCount} of {totalCount} completed
-          </span>
-        </div>
-        <div className={`h-1.5 rounded-full ${t.track} overflow-hidden`}>
+      <div className="mt-1 flex items-center gap-2 px-2 text-[11px] font-bold">
+        <Heart size={13} className="text-red-500" fill="currentColor" />
+        <span className={t.textPrimary}>HP</span>
+        <div className={`h-3 flex-1 overflow-hidden rounded-full ${t.track}`}>
           <div
-            className="h-full rounded-full bg-blue-600 transition-all duration-500 ease-out"
-            style={{ width: `${pct}%` }}
+            className={`h-full rounded-full transition-all duration-500 ${health.health_points <= 30 ? "bg-red-500" : "bg-green-600"}`}
+            style={{ width: `${health.health_points}%` }}
           />
         </div>
+        <span className={t.textSecondary}>{health.health_points}/100</span>
+      </div>
+
+      {/* Daily Goal Progress Bar */}
+      <div className="mt-3 flex items-stretch gap-3">
+        <div className={`min-w-0 flex-1 rounded-2xl ${t.card} border ${t.border} shadow-sm p-4`}>
+          <div className="flex items-center justify-between mb-2.5">
+            <span className={`text-sm font-medium ${t.textSecondary}`}>Daily goal</span>
+            <span className="text-sm font-semibold text-blue-600">
+              {completedCount} of {totalCount} completed
+            </span>
+          </div>
+          <div className={`h-1.5 rounded-full ${t.track} overflow-hidden`}>
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-500 ease-out"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+        <button
+          onClick={onOpenSocial}
+          aria-label="Open social hub"
+          className="w-[76px] shrink-0 overflow-hidden rounded-2xl transition-transform hover:scale-105 active:scale-95"
+        >
+          <img
+            src={socialNotification
+              ? "/Button-Open-Social-Leaderboard-and-Friends-notif.png"
+              : "/Button-Open-Social-Leaderboard-and-Friends-nonotif.png"}
+            alt="Social"
+            className="h-full w-full object-contain"
+          />
+        </button>
       </div>
     </div>
   );
@@ -1293,6 +1773,212 @@ function DailyJournal({ t, journal, onChangeText, onAddImage, onRemoveImage }) {
    App
 --------------------------------------------------------------- */
 
+function SocialScreen({ t, user, habits, onClose, onNotificationChange }) {
+  const [section, setSection] = useState("leaderboard");
+  const [friendView, setFriendView] = useState("all");
+  const [query, setQuery] = useState("");
+  const [searchResult, setSearchResult] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [requests, setRequests] = useState([]);
+  const [friends, setFriends] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]);
+
+  useEffect(() => {
+    onNotificationChange(requests.length > 0);
+  }, [requests.length, onNotificationChange]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSocialData = async () => {
+      try {
+        const [pendingRequests, friendProfiles] = await Promise.all([
+          supabase.getPendingFriendRequests(),
+          supabase.getFriends(),
+        ]);
+        if (cancelled) return;
+        setRequests((pendingRequests || []).map((request) => ({
+          id: request.id,
+          userId: request.sender_id,
+          name: request.sender_username,
+          username: request.sender_username,
+          color: "blue",
+        })));
+        setFriends((friendProfiles || []).map((friend) => ({
+          id: friend.id,
+          name: friend.username,
+          username: friend.username,
+          streak: 0,
+          online: false,
+          color: "blue",
+        })));
+      } catch (error) {
+        console.error("Failed to load social data:", error);
+      }
+    };
+
+    loadSocialData();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const search = async () => {
+      const normalizedQuery = query.trim().replace(/^@/, "");
+      if (!normalizedQuery) {
+        setSearchResult(null);
+        return;
+      }
+
+      setSearching(true);
+      try {
+        const results = await supabase.searchProfiles(normalizedQuery);
+        const match = results?.find((profile) => profile.id !== user?.id);
+        if (!cancelled) setSearchResult(match ? {
+          id: match.id,
+          name: match.username,
+          username: match.username,
+          color: "blue",
+        } : null);
+      } catch (error) {
+        console.error("Failed to search profiles:", error);
+        if (!cancelled) setSearchResult(null);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    };
+
+    search();
+    return () => {
+      cancelled = true;
+    };
+  }, [query, user?.id]);
+
+  const displayName = user?.user_metadata?.username || user?.email?.split("@")[0] || "You";
+  const currentStreak = habits.length ? Math.max(...habits.map((habit) => habit.streak || 0)) : 0;
+  const currentUser = { id: "me", name: displayName, username: displayName.toLowerCase(), streak: currentStreak, online: true, color: "blue" };
+  const leaderboard = [currentUser, ...friends]
+    .sort((first, second) => second.streak - first.streak)
+    .map((person, index) => ({ ...person, rank: index + 1 }));
+  const filteredFriends = friends.filter((friend) => friend.online || friendView === "all");
+  const avatarClass = {
+    blue: "bg-blue-100 text-blue-600",
+    violet: "bg-violet-100 text-violet-600",
+    emerald: "bg-emerald-100 text-emerald-600",
+    slate: "bg-slate-200 text-slate-600",
+  };
+  const isSearchResultFriend = searchResult && friends.some((friend) =>
+    friend.id === searchResult.id
+    || friend.username?.toLowerCase() === searchResult.username?.toLowerCase()
+  );
+
+  const handleRequest = async (person) => {
+    try {
+      await supabase.sendFriendRequest(person.id);
+      setSentRequests((current) => [...current, person.id]);
+    } catch (error) {
+      console.error("Failed to send friend request:", error);
+    }
+  };
+
+  const handleRespond = async (requestId, status) => {
+    try {
+      await supabase.respondFriendRequest(requestId, status);
+      setRequests((current) => current.filter((request) => request.id !== requestId));
+      if (status === "accepted") {
+        const acceptedRequest = requests.find((request) => request.id === requestId);
+        if (acceptedRequest) {
+          setFriends((current) => [...current, {
+            id: acceptedRequest.userId,
+            name: acceptedRequest.name,
+            username: acceptedRequest.username,
+            streak: 0,
+            online: false,
+            color: "blue",
+          }]);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to respond to friend request:", error);
+    }
+  };
+
+  const handleUnfriend = async (friend) => {
+    try {
+      await supabase.removeFriend(friend.id);
+      setFriends((current) => current.filter((item) => item.id !== friend.id));
+    } catch (error) {
+      console.error("Failed to remove friend:", error);
+    }
+  };
+
+  return (
+    <div className={`absolute inset-0 z-50 min-h-screen ${t.canvas} overflow-y-auto`}>
+      <div className="px-5 pb-10 pt-5">
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><Users size={20} /></div>
+            <div><h1 className={`text-xl font-bold ${t.textPrimary}`}>Konco</h1><p className={`text-[11px] ${t.textMuted}`}>Your habit community</p></div>
+          </div>
+          <button onClick={onClose} aria-label="Close Konco" className={`flex h-9 w-9 items-center justify-center rounded-full ${t.badge} ${t.textMuted}`}><X size={17} /></button>
+        </div>
+
+        <div className={`mb-5 grid grid-cols-2 rounded-2xl ${t.badge} p-1`}>
+          {[{ key: "leaderboard", label: "Leaderboard", icon: Trophy }, { key: "friends", label: `Friends (${friends.length})`, icon: Users }].map(({ key, label, icon: Icon }) => (
+            <button key={key} onClick={() => setSection(key)} className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-colors ${section === key ? "bg-blue-600 text-white shadow-sm" : t.textSecondary}`}><Icon size={14} />{label}</button>
+          ))}
+        </div>
+
+        {section === "leaderboard" ? (
+          <>
+            <div className={`mb-5 grid grid-cols-3 gap-2 rounded-2xl ${t.card} border ${t.border} p-3 text-center`}>
+              <div><p className={`text-[10px] uppercase ${t.textMuted}`}>Members</p><p className={`mt-1 text-lg font-bold ${t.textPrimary}`}>{leaderboard.length}</p></div>
+              <div><p className={`text-[10px] uppercase ${t.textMuted}`}>Your rank</p><p className="mt-1 text-lg font-bold text-blue-600">#{currentUser.rank || leaderboard.findIndex((person) => person.id === "me") + 1}</p></div>
+              <div><p className={`text-[10px] uppercase ${t.textMuted}`}>Live streak</p><p className="mt-1 text-lg font-bold text-orange-500">{currentStreak}d</p></div>
+            </div>
+            <div className="mb-3 flex items-center justify-between"><div><h2 className={`text-sm font-bold ${t.textPrimary}`}>All competitors</h2><p className={`text-[11px] ${t.textMuted}`}>Live streak data from the community</p></div><span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />LIVE</span></div>
+            <div className="space-y-2">
+              {leaderboard.map((person) => (
+                <div key={person.id} className={`flex items-center gap-3 rounded-2xl border p-3 ${person.id === "me" ? "border-blue-200 bg-blue-50/70" : `${t.card} ${t.border}`}`}>
+                  <span className={`w-6 text-center text-xs font-bold ${person.rank <= 3 ? "text-amber-500" : t.textMuted}`}>{person.rank <= 3 ? ["🥇", "🥈", "🥉"][person.rank - 1] : `#${person.rank}`}</span>
+                  <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold ${avatarClass[person.color]}`}>{person.name.slice(0, 2).toUpperCase()}</span>
+                  <div className="min-w-0 flex-1"><p className={`truncate text-sm font-bold ${t.textPrimary}`}>{person.name}{person.id === "me" && <span className="ml-1 text-[10px] text-blue-600">(You)</span>}</p><p className={`truncate text-[11px] ${t.textMuted}`}>@{person.username}</p></div>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-500"><Flame size={12} fill="currentColor" />{person.streak}d</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={`mb-4 flex items-center gap-2 rounded-xl ${t.card} border ${t.border} px-3`}><Search size={16} className={t.textMuted} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search username or @email..." className={`min-w-0 flex-1 bg-transparent py-3 text-xs ${t.textPrimary} outline-none`} /><button onClick={() => searchResult && !isSearchResultFriend && handleRequest(searchResult)} disabled={!searchResult || searching || isSearchResultFriend || sentRequests.includes(searchResult?.id)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">{searching ? "Searching..." : isSearchResultFriend ? "Friend" : searchResult && sentRequests.includes(searchResult.id) ? "Sent" : <><Plus size={13} className="mr-1 inline" />Add</>}</button></div>
+            {query && searchResult && <div className={`mb-4 flex items-center gap-3 rounded-2xl border ${t.border} ${t.card} p-3`}><span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold ${avatarClass[searchResult.color]}`}>{searchResult.name.slice(0, 2).toUpperCase()}</span><div className="flex-1"><p className={`text-sm font-bold ${t.textPrimary}`}>{searchResult.name}</p><p className={`text-[11px] ${t.textMuted}`}>@{searchResult.username}</p></div><button onClick={() => !isSearchResultFriend && handleRequest(searchResult)} disabled={isSearchResultFriend || sentRequests.includes(searchResult.id)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{isSearchResultFriend ? "Friend" : sentRequests.includes(searchResult.id) ? "Request sent" : "Add friend"}</button></div>}
+            <div className="mb-2 flex items-center justify-between"><h2 className={`text-[11px] font-bold uppercase tracking-wide ${t.textMuted}`}>Friend requests <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] text-white">{requests.length}</span></h2></div>
+            <div className="mb-5 space-y-2">{requests.length === 0 ? <p className={`rounded-2xl border ${t.border} ${t.card} p-4 text-center text-xs ${t.textMuted}`}>No friend requests yet.</p> : requests.map((request) => <div key={request.id} className={`flex items-center gap-3 rounded-2xl border ${t.border} ${t.card} p-3`}><span className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold ${avatarClass[request.color]}`}>{request.name.slice(0, 2).toUpperCase()}</span><div className="min-w-0 flex-1"><p className={`truncate text-sm font-bold ${t.textPrimary}`}>{request.name}</p><p className={`truncate text-[11px] ${t.textMuted}`}>@{request.username}</p></div><button onClick={() => handleRespond(request.id, "accepted")} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white"><UserCheck size={13} className="mr-1 inline" />Accept</button><button onClick={() => handleRespond(request.id, "rejected")} aria-label={`Reject ${request.name}`} className={`flex h-8 w-8 items-center justify-center rounded-lg ${t.badge} ${t.textMuted}`}><UserX size={14} /></button></div>)}</div>
+            <div className="mb-2 flex items-center justify-between"><h2 className={`text-[11px] font-bold uppercase tracking-wide ${t.textMuted}`}>All friends</h2><div className={`flex rounded-lg ${t.badge} p-0.5 text-[10px] font-bold`}><button onClick={() => setFriendView("all")} className={`rounded-md px-2 py-1 ${friendView === "all" ? "bg-slate-900 text-white" : t.textMuted}`}>All ({friends.length})</button><button onClick={() => setFriendView("online")} className={`rounded-md px-2 py-1 ${friendView === "online" ? "bg-slate-900 text-white" : t.textMuted}`}>Online ({friends.filter((friend) => friend.online).length})</button></div></div>
+            <div className="space-y-2">{filteredFriends.length === 0 ? <p className={`rounded-2xl border ${t.border} ${t.card} p-4 text-center text-xs ${t.textMuted}`}>{query ? "No users found." : "No friends yet."}</p> : filteredFriends.map((friend) => <div key={friend.id} className={`flex items-center gap-3 rounded-2xl border ${t.border} ${t.card} p-3`}><div className="relative"><span className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold ${avatarClass[friend.color]}`}>{friend.name.slice(0, 2).toUpperCase()}</span>{friend.online && <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />}</div><div className="min-w-0 flex-1"><p className={`truncate text-sm font-bold ${t.textPrimary}`}>{friend.name}</p><p className={`truncate text-[11px] ${t.textMuted}`}>@{friend.username} · {friend.habit}</p><span className="mt-1 inline-flex items-center gap-1 rounded-md bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold text-orange-500"><Flame size={10} fill="currentColor" />{friend.streak}d streak</span></div><button onClick={() => handleUnfriend(friend)} aria-label={`Unfriend ${friend.name}`} className="rounded-xl bg-red-50 px-2.5 py-2 text-xs font-bold text-red-500"><UserX size={13} className="mr-1 inline" />Unfriend</button></div>)}</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HealthZeroOverlay({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/75 p-5">
+      <div className="w-full max-w-sm rounded-[28px] bg-white px-6 py-8 text-center shadow-2xl">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500">
+          <Heart size={32} fill="currentColor" />
+        </div>
+        <h2 className="mt-5 text-3xl font-black tracking-tight text-slate-900">what a Loser</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500">Your HP reached 0. Build your habits back up next week.</p>
+        <button onClick={onClose} className="mt-6 w-full rounded-xl bg-blue-600 py-3 text-sm font-bold text-white">Continue</button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { theme, setTheme, isDark, t } = useTheme();
   const [user, setUser] = useState(null);
@@ -1300,9 +1986,17 @@ export default function App() {
   const [journals, setJournals] = useState({});
   const [activeFilter, setActiveFilter] = useState("all");
   const [selectedHabitId, setSelectedHabitId] = useState(null); 
+  const [socialOpen, setSocialOpen] = useState(false);
+  const [socialNotification, setSocialNotification] = useState(false);
+  const [health, setHealth] = useState({ health_points: 100, missed_habits: 0 });
+  const [healthOverlayOpen, setHealthOverlayOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [authView, setAuthView] = useState("start");
+  const [language, setLanguage] = useState(() => localStorage.getItem("routine-language") || "en");
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [dataError, setDataError] = useState("");
   const journalSyncTimer = useRef(null);
   const { toasts, show, remove } = useToast();
 
@@ -1329,13 +2023,59 @@ export default function App() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+
+    const refreshSocialNotification = async () => {
+      try {
+        const pendingRequests = await supabase.getPendingFriendRequests();
+        if (active) setSocialNotification((pendingRequests || []).length > 0);
+      } catch (error) {
+        console.error("Failed to refresh social notification:", error);
+      }
+    };
+
+    refreshSocialNotification();
+    const timer = window.setInterval(refreshSocialNotification, 10000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+
+    const refreshHealth = async () => {
+      try {
+        const currentHealth = await supabase.getCurrentHealth();
+        if (!active) return;
+        setHealth(currentHealth);
+        if (currentHealth.health_points <= 0) setHealthOverlayOpen(true);
+      } catch (error) {
+        console.error("Failed to refresh health:", error);
+      }
+    };
+
+    refreshHealth();
+    const timer = window.setInterval(refreshHealth, 60000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [user]);
+
   const fetchUserData = async (userId) => {
     try {
+      setDataError("");
       // Fetch habits
       const dbHabits = await supabase
         .from("habits")
         .select("*")
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .execute();
 
       // Completion history is optional for restoring the habit list.
       let dbCompletions = [];
@@ -1345,7 +2085,8 @@ export default function App() {
           dbCompletions = await supabase
             .from("habit_completions")
             .select("*")
-            .in("habit_id", habitIds);
+            .in("habit_id", habitIds)
+            .execute();
         } catch (err) {
           console.error("Failed to fetch completion history:", err);
         }
@@ -1375,7 +2116,8 @@ export default function App() {
       const dbJournals = await supabase
         .from("daily_journals")
         .select("*")
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .execute();
 
       const journalsMap = {};
       dbJournals.forEach((j) => {
@@ -1387,6 +2129,7 @@ export default function App() {
       setJournals(journalsMap);
     } catch (err) {
       console.error("Failed to fetch user data:", err);
+      setDataError(err.message || "Unable to load your saved habits.");
     }
   };
 
@@ -1423,7 +2166,7 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-      show("Failed to sync habit", "error", AlertCircle);
+      show(`Failed to sync habit: ${err.message}`, "error", AlertCircle);
       // Revert on error
       await fetchUserData(user.id);
     } finally {
@@ -1496,10 +2239,10 @@ export default function App() {
       setHabits((prev) =>
         prev.map((h) => (h.id === habitId ? { ...h, notes: text } : h))
       );
-      show("Notes saved", "success", CheckCircle);
+      return true;
     } catch (err) {
       console.error(err);
-      show("Failed to save note", "error", AlertCircle);
+      return false;
     } finally {
       setSyncing(false);
     }
@@ -1558,10 +2301,43 @@ export default function App() {
       setUser(null);
       setHabits([]);
       setJournals({});
-      show("Logged out successfully", "success", CheckCircle);
+      setAccountOpen(false);
+      setAuthView("login");
     } catch (err) {
       console.error(err);
       show("Failed to logout", "error", AlertCircle);
+    }
+  };
+
+  const handleLanguageChange = (nextLanguage) => {
+    setLanguage(nextLanguage);
+    localStorage.setItem("routine-language", nextLanguage);
+  };
+
+  const handleUpdateProfile = async (attributes) => {
+    const updatedUser = await supabase.updateUser(attributes);
+    setUser(updatedUser.user || updatedUser);
+    return updatedUser;
+  };
+
+  const handleUpdateUsername = async (username) => {
+    await supabase.updateUsername(user.id, user.email, username);
+    const updatedUser = await supabase.updateUser({ data: { username } });
+    setUser(updatedUser.user || updatedUser);
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmed = window.confirm("Delete your account and all of your data permanently?");
+    if (!confirmed) return;
+    try {
+      await supabase.deleteUser();
+      await supabase.logout();
+      setUser(null);
+      setHabits([]);
+      setJournals({});
+      setAccountOpen(false);
+    } catch (err) {
+      show(`Failed to delete account: ${err.message}`, "error", AlertCircle);
     }
   };
 
@@ -1593,9 +2369,22 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginScreen t={t} onLoginSuccess={(u) => {
+    if (authView === "start") {
+      return (
+        <StartingScreen
+          t={t}
+          onGetStarted={() => setAuthView("signup")}
+          onSignIn={() => setAuthView("login")}
+        />
+      );
+    }
+    return <LoginScreen t={t} initialMode={authView} onLoginSuccess={(u) => {
       setUser(u);
       fetchUserData(u.id);
+      setAuthView("login");
+      const rawName = u.email?.split("@")[0] || "there";
+      const displayName = (u.user_metadata?.username || rawName).charAt(0).toUpperCase() + (u.user_metadata?.username || rawName).slice(1);
+      show(`Welcome back, ${displayName}!`, "success", CheckCircle);
     }} />;
   }
 
@@ -1618,6 +2407,31 @@ export default function App() {
       ))}
       
       <div className={`w-full max-w-md min-h-screen ${t.canvas} shadow-lg relative overflow-hidden`}>
+        {healthOverlayOpen && health.health_points <= 0 && (
+          <HealthZeroOverlay onClose={() => setHealthOverlayOpen(false)} />
+        )}
+        {socialOpen && (
+          <SocialScreen
+            t={t}
+            user={user}
+            habits={habits}
+            onClose={() => setSocialOpen(false)}
+            onNotificationChange={setSocialNotification}
+          />
+        )}
+        {accountOpen && (
+          <AccountSettings
+            t={t}
+            user={user}
+            language={language}
+            onLanguageChange={handleLanguageChange}
+            onUpdateProfile={handleUpdateProfile}
+            onUpdateUsername={handleUpdateUsername}
+            onDeleteAccount={handleDeleteAccount}
+            onLogout={handleLogout}
+            onClose={() => setAccountOpen(false)}
+          />
+        )}
         
         {/* --- Render Detail Screen if a habit is selected --- */}
         {selectedHabit && (
@@ -1640,9 +2454,21 @@ export default function App() {
             totalCount={totalCount}
             user={user}
             onLogout={handleLogout}
+            onProfileClick={() => setAccountOpen(true)}
+            onOpenSocial={() => setSocialOpen(true)}
+            socialNotification={socialNotification}
+            health={health}
           />
 
           <FilterBar t={t} active={activeFilter} onChange={setActiveFilter} />
+
+          {dataError && (
+            <div className="px-5 pb-3">
+              <div className={`rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700`}>
+                Unable to load saved data: {dataError}
+              </div>
+            </div>
+          )}
 
           <div className="px-5 flex flex-col gap-3">
             {filteredHabits.length === 0 ? (
