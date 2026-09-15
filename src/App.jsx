@@ -721,6 +721,38 @@ function Toast({ message, type = "info", icon: Icon, onClose }) {
   );
 }
 
+const loginSuccessCats = [
+  { image: "/1.png", message: "Hallow, welcome back!" },
+  { image: "/2.png", message: "Sup brodie!" },
+  { image: "/3.png", message: "hehehe, lollipop hehe" },
+];
+
+function LoginSuccessCat({ cat, onDone }) {
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 h-[min(52vh,460px)] overflow-hidden" aria-hidden="true">
+      <style>{`
+        @keyframes homeCatPopUp { 0% { opacity: 0; transform: translate(-50%, 100%); } 22% { opacity: 1; transform: translate(-50%, 0); } 73% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, 8%); } }
+        @keyframes homeBubblePopUp { 0%, 18% { opacity: 0; transform: translate(-50%, 12px) scale(0.88); } 27%, 73% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -5px) scale(0.96); } }
+        @media (prefers-reduced-motion: reduce) { .home-cat-animation, .home-bubble-animation { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }
+      `}</style>
+      <div
+        className="home-cat-animation absolute bottom-[-1px] left-1/2 w-[150px] sm:w-[150px] lg:w-[100px]"
+        onAnimationEnd={onDone}
+        style={{ animation: "homeCatPopUp 5.5s cubic-bezier(0.22, 0.8, 0.35, 1) forwards" }}
+      >
+        <div
+          className="home-bubble-animation absolute bottom-[96%] left-1/2 max-w-[calc(100vw-2rem)] whitespace-nowrap rounded-full bg-slate-900 px-5 py-2.5 text-center text-sm font-semibold text-white shadow-lg"
+          style={{ animation: "homeBubblePopUp 5.5s ease-out forwards" }}
+        >
+          {cat.message}
+          <span className="absolute left-1/2 top-full -translate-x-1/2 border-x-[8px] border-x-transparent border-t-[8px] border-t-slate-900" />
+        </div>
+        <img src={cat.image} alt="" className="block h-auto w-full object-contain" />
+      </div>
+    </div>
+  );
+}
+
 function AccountSettings({ t, user, language, onLanguageChange, onUpdateProfile, onUpdateUsername, onDeleteAccount, onLogout, onClose }) {
   const [username, setUsername] = useState(user?.user_metadata?.username || user?.email?.split("@")[0] || "user");
   const [password, setPassword] = useState("");
@@ -959,21 +991,15 @@ function StartingScreen({ t, onGetStarted, onSignIn }) {
   const [imageFailed, setImageFailed] = useState(false);
 
   return (
-    <div className={`min-h-screen ${t.canvas} flex items-center justify-center p-4`}>
+    <div className={`min-h-screen ${t.canvas} flex items-center justify-center px-4 py-10 sm:px-8 lg:px-12`}>
       <style>{`@keyframes floatBubble { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -9px); } }`}</style>
-      <div className={`w-full max-w-md min-h-[720px] ${t.card} border ${t.border} rounded-[42px] shadow-xl px-7 py-6 flex flex-col overflow-hidden`}>
-        <div className="flex items-center justify-between text-[11px] font-bold text-slate-900 px-2">
-          <span>9:41</span>
-          <div className="w-24 h-5 rounded-full bg-slate-950" />
-          <span className="tracking-widest">•••</span>
-        </div>
-
-        <div className="relative flex-1 flex items-center justify-center min-h-[365px]">
+      <div className="w-full max-w-5xl grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
+        <div className="relative flex min-h-[300px] items-center justify-center sm:min-h-[380px]">
           <div className="absolute top-16 left-1/2 z-10 rounded-full bg-slate-900 text-white text-xs px-4 py-2 shadow-lg" style={{ animation: "floatBubble 3.4s ease-in-out infinite" }}>
             Siap Jadi Sigma?
             <span className="absolute left-1/2 top-full -translate-x-1/2 border-x-[8px] border-x-transparent border-t-[8px] border-t-slate-900" />
           </div>
-          <div className="w-64 h-64 rounded-full bg-blue-50/80 flex items-center justify-center overflow-hidden">
+          <div className="flex h-64 w-64 items-center justify-center overflow-hidden rounded-full bg-blue-50/80 sm:h-80 sm:w-80">
             {!imageFailed ? (
               <img src="/cat.png" alt="A cat ready to build habits" onError={() => setImageFailed(true)} className="w-[88%] h-[88%] object-contain" />
             ) : (
@@ -982,10 +1008,10 @@ function StartingScreen({ t, onGetStarted, onSignIn }) {
           </div>
         </div>
 
-        <div className="px-1">
-          <h1 className="text-[34px] leading-[0.98] font-extrabold tracking-tight text-slate-950">Small habits<br />Big changes<span className="text-blue-600">.</span></h1>
-          <p className="mt-6 text-[16px] leading-6 text-slate-500">Train your daily focus, track your fitness streaks, and master your life one rep at a time using <strong>JOURMAL.</strong></p>
-          <button onClick={onGetStarted} className="mt-9 w-full h-14 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold shadow-lg shadow-blue-600/25">Get Started <span className="ml-2 text-lg">→</span></button>
+        <div className="w-full max-w-xl justify-self-center px-1 lg:justify-self-start">
+          <h1 className="text-4xl font-extrabold leading-[0.98] tracking-tight text-slate-950 sm:text-5xl">Small habits<br />Big changes<span className="text-blue-600">.</span></h1>
+          <p className="mt-6 max-w-lg text-base leading-7 text-slate-500 sm:text-lg">Train your daily focus, track your fitness streaks, and master your life one rep at a time using <strong>JOURMAL.</strong></p>
+          <button onClick={onGetStarted} className="mt-9 h-14 w-full rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold shadow-lg shadow-blue-600/25 sm:max-w-md">Get Started <span className="ml-2 text-lg">→</span></button>
           <p className="text-center text-sm text-slate-500 mt-4">Already have an account? <button onClick={onSignIn} className="font-bold text-blue-600">Sign In</button></p>
         </div>
       </div>
@@ -1292,7 +1318,7 @@ function LoginScreen({ t, onLoginSuccess, initialMode = "login" }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-10 sm:px-8 lg:px-12">
       <style>{`
         @keyframes authPanelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes authFieldIn { from { opacity: 0; max-height: 0; transform: translateY(-8px); } to { opacity: 1; max-height: 100px; transform: translateY(0); } }
@@ -1300,13 +1326,7 @@ function LoginScreen({ t, onLoginSuccess, initialMode = "login" }) {
       {toasts.map((toast) => (
         <Toast key={toast.id} message={toast.message} type={toast.type} icon={toast.icon} onClose={() => remove(toast.id)} />
       ))}
-      <div className="w-full max-w-[390px] min-h-[760px] rounded-[40px] bg-white shadow-2xl px-6 pt-8 pb-7 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-900 mb-10">
-          <span>9:41</span>
-          <div className="w-24 h-5 rounded-full bg-black" />
-          <span className="tracking-widest">•••</span>
-        </div>
-
+      <div className="w-full max-w-lg">
         <div className="text-center">
           <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 mx-auto flex items-center justify-center overflow-hidden shadow-sm">
             <img src="/cat.png" alt="Jourmal" className="w-full h-full object-cover" />
@@ -1321,7 +1341,7 @@ function LoginScreen({ t, onLoginSuccess, initialMode = "login" }) {
           <button type="button" onClick={() => switchMode("signup")} className={`relative z-10 w-1/2 text-sm font-semibold transition-colors duration-300 ${isSignup ? "text-slate-900" : "text-slate-500"}`}>Create Account</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-8 flex-1">
+        <form onSubmit={handleSubmit} className="mt-8">
           <div className="space-y-4" style={{ animation: "authPanelIn 0.35s ease-out" }}>
             {isSignup && (
               <div style={{ animation: "authFieldIn 0.3s ease-out" }}>
@@ -1516,7 +1536,7 @@ function HeatmapRow({ t, completedDates }) {
    Habit card
 --------------------------------------------------------------- */
 
-function HabitCard({ t, habit, onToggle, onDelete, onOpenDetails }) {
+function HabitCard({ t, habit, onToggle, onDelete, onEdit, onOpenDetails }) {
   const Icon = ICONS[habit.icon] || Droplet;
   const doneToday = habit.completedDates.includes(todayStr());
   const [pressed, setPressed] = useState(false);
@@ -1534,15 +1554,28 @@ function HabitCard({ t, habit, onToggle, onDelete, onOpenDetails }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <p className={`font-medium truncate ${t.textPrimary}`}>{habit.title}</p>
-          <button
-            onClick={(e) => {
-              e.stopPropagation(); // Prevents opening details when deleting
-              onDelete(habit.id);
-            }}
-            className={`opacity-0 group-hover:opacity-100 transition-opacity duration-150 ${t.textMuted} hover:text-red-500 shrink-0`}
-          >
-            <Trash2 size={14} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(habit);
+              }}
+              aria-label={`Edit ${habit.title}`}
+              className={`w-7 h-7 rounded-full flex items-center justify-center ${t.textMuted} hover:${t.textPrimary} hover:${t.badge}`}
+            >
+              <MoreVertical size={15} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(habit.id);
+              }}
+              aria-label={`Delete ${habit.title}`}
+              className={`w-7 h-7 rounded-full flex items-center justify-center ${t.textMuted} hover:text-red-500`}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
         </div>
         <div className={`flex items-center gap-1.5 mt-1 text-xs ${t.textSecondary}`}>
           {habit.streak > 0 ? (
@@ -1582,7 +1615,7 @@ function HabitCard({ t, habit, onToggle, onDelete, onOpenDetails }) {
    Add Habit Modal
 --------------------------------------------------------------- */
 
-function AddHabitSheet({ t, open, onClose, onSave }) {
+function AddHabitSheet({ t, open, editingHabit, onClose, onSave }) {
   const [title, setTitle] = useState("");
   const [timeOfDay, setTimeOfDay] = useState("morning");
   const [icon, setIcon] = useState("Droplet");
@@ -1592,13 +1625,13 @@ function AddHabitSheet({ t, open, onClose, onSave }) {
 
   useEffect(() => {
     if (open) {
-      setTitle("");
-      setTimeOfDay("morning");
-      setIcon("Droplet");
+      setTitle(editingHabit?.title || "");
+      setTimeOfDay(editingHabit?.timeOfDay || "morning");
+      setIcon(editingHabit?.icon || "Droplet");
       setLoading(false);
       setTimeout(() => inputRef.current?.focus(), 250);
     }
-  }, [open]);
+  }, [open, editingHabit]);
 
   if (!open) return null;
 
@@ -1620,7 +1653,7 @@ function AddHabitSheet({ t, open, onClose, onSave }) {
       <div className={`absolute inset-0 ${t.overlay}`} onClick={onClose} />
       <div className={`relative w-full max-w-md ${t.surface} rounded-t-2xl p-5 pb-8 shadow-lg`}>
         <div className="flex items-center justify-between mb-5">
-          <h2 className={`text-lg font-semibold ${t.textPrimary}`}>New habit</h2>
+          <h2 className={`text-lg font-semibold ${t.textPrimary}`}>{editingHabit ? "Edit habit" : "New habit"}</h2>
           <button
             onClick={onClose}
             className={`w-8 h-8 rounded-full flex items-center justify-center ${t.badge} ${t.textSecondary}`}
@@ -1685,7 +1718,7 @@ function AddHabitSheet({ t, open, onClose, onSave }) {
           }`}
         >
           {loading && <Loader size={14} className="animate-spin" />}
-          {loading ? "Saving..." : "Save habit"}
+          {loading ? "Saving..." : editingHabit ? "Save changes" : "Save habit"}
         </button>
       </div>
     </div>
@@ -1995,9 +2028,11 @@ export default function App() {
   const [authView, setAuthView] = useState("start");
   const [language, setLanguage] = useState(() => localStorage.getItem("routine-language") || "en");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingHabit, setEditingHabit] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [dataError, setDataError] = useState("");
+  const [loginSuccessCat, setLoginSuccessCat] = useState(null);
   const journalSyncTimer = useRef(null);
   const { toasts, show, remove } = useToast();
 
@@ -2231,6 +2266,33 @@ export default function App() {
     }
   };
 
+  const updateHabit = async (input) => {
+    if (!editingHabit) return false;
+    try {
+      setSyncing(true);
+      await supabase.from("habits").eq("id", editingHabit.id).update({
+        title: input.title,
+        icon: input.icon,
+        time_of_day: input.timeOfDay,
+      });
+      setHabits((prev) =>
+        prev.map((habit) =>
+          habit.id === editingHabit.id
+            ? { ...habit, title: input.title, icon: input.icon, timeOfDay: input.timeOfDay }
+            : habit
+        )
+      );
+      show(`"${input.title}" updated`, "success", CheckCircle);
+      return true;
+    } catch (err) {
+      console.error(err);
+      show(`Failed to update habit: ${err.message}`, "error", AlertCircle);
+      return false;
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const saveHabitNote = async (habitId, text) => {
     try {
       setSyncing(true);
@@ -2383,9 +2445,8 @@ export default function App() {
       setUser(u);
       fetchUserData(u.id);
       setAuthView("login");
-      const rawName = u.email?.split("@")[0] || "there";
-      const displayName = (u.user_metadata?.username || rawName).charAt(0).toUpperCase() + (u.user_metadata?.username || rawName).slice(1);
-      show(`Welcome back, ${displayName}!`, "success", CheckCircle);
+      const cat = loginSuccessCats[Math.floor(Math.random() * loginSuccessCats.length)];
+      setLoginSuccessCat(cat);
     }} />;
   }
 
@@ -2407,7 +2468,8 @@ export default function App() {
         />
       ))}
       
-      <div className={`w-full max-w-md min-h-screen ${t.canvas} shadow-lg relative overflow-hidden`}>
+      <div className={`w-full max-w-6xl min-h-screen ${t.canvas} relative overflow-hidden`}>
+        {loginSuccessCat && <LoginSuccessCat cat={loginSuccessCat} onDone={() => setLoginSuccessCat(null)} />}
         {healthOverlayOpen && health.health_points <= 0 && (
           <HealthZeroOverlay onClose={() => setHealthOverlayOpen(false)} />
         )}
@@ -2486,6 +2548,10 @@ export default function App() {
                   habit={h}
                   onToggle={toggleHabit}
                   onDelete={deleteHabit}
+                  onEdit={(habit) => {
+                    setEditingHabit(habit);
+                    setModalOpen(true);
+                  }}
                   onOpenDetails={(id) => setSelectedHabitId(id)}
                 />
               ))
@@ -2508,7 +2574,10 @@ export default function App() {
           )}
 
           <button
-            onClick={() => setModalOpen(true)}
+            onClick={() => {
+              setEditingHabit(null);
+              setModalOpen(true);
+            }}
             className="fixed bottom-8 right-6 w-14 h-14 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform duration-150 z-40"
           >
             <Plus size={24} />
@@ -2517,8 +2586,12 @@ export default function App() {
           <AddHabitSheet
             t={t}
             open={modalOpen}
-            onClose={() => setModalOpen(false)}
-            onSave={addHabit}
+            editingHabit={editingHabit}
+            onClose={() => {
+              setModalOpen(false);
+              setEditingHabit(null);
+            }}
+            onSave={editingHabit ? updateHabit : addHabit}
           />
         </div>
       </div>
