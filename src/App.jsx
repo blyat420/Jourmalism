@@ -89,8 +89,12 @@ class SupabaseClient {
       },
       body: body ? JSON.stringify(body) : null,
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error_description || data.message);
+    const responseText = await res.text();
+    const data = responseText ? JSON.parse(responseText) : {};
+    if (!res.ok) {
+      const message = data.error_description || data.msg || data.message || `Request failed (HTTP ${res.status})`;
+      throw new Error(message);
+    }
     return data;
   }
 
@@ -322,6 +326,18 @@ class Table {
 }
 
 const supabase = new SupabaseClient(SUPABASE_URL, SUPABASE_KEY);
+
+function getAuthErrorMessage(error, isSignup) {
+  const rawMessage = error?.message || "";
+  if (/rate limit|too many requests|email rate/i.test(rawMessage)) {
+    return isSignup
+      ? "Verification email limit reached. Please wait a few minutes before trying again, or check your inbox and spam folder for an existing email."
+      : "Too many sign-in attempts. Please wait a few minutes and try again.";
+  }
+  return rawMessage || (isSignup
+    ? "Unable to create your account. Please check your details and try again."
+    : "Unable to sign in. Please check your details and try again.");
+}
 
 /* ---------------------------------------------------------------
    Constants & Helpers
@@ -1052,8 +1068,9 @@ function LegacyLoginScreen({ t, onLoginSuccess, initialMode = "choose" }) {
         }
       }
     } catch (err) {
-      setError(err.message);
-      show(err.message, "error", AlertCircle);
+      const message = err?.message || "Unable to create your account. Please check your details and try again.";
+      setError(message);
+      show(message, "error", AlertCircle);
     } finally {
       setLoading(false);
     }
@@ -1314,8 +1331,9 @@ function LoginScreen({ t, onLoginSuccess, initialMode = "login" }) {
         if (user) onLoginSuccess(user);
       }
     } catch (err) {
-      setError(err.message);
-      show(err.message, "error", AlertCircle);
+      const message = getAuthErrorMessage(err, isSignup);
+      setError(message);
+      show(message, "error", AlertCircle);
     } finally {
       setLoading(false);
     }
@@ -1438,13 +1456,24 @@ function Header({ t, isDark, onToggleTheme, completedCount, totalCount, user, on
         </div>
       </div>
 
-      <div className="mt-1 flex items-center gap-2 px-2 text-[11px] font-bold">
-        <Heart size={13} className="text-red-500" fill="currentColor" />
-        <span className={t.textPrimary}>HP</span>
-        <div className={`h-3 flex-1 overflow-hidden rounded-full ${t.track}`}>
-          <div className="h-full rounded-full bg-red-500 transition-all" style={{ width: `${health.health_points}%` }} />
+      <div className="mt-1 flex items-center gap-3 px-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-[11px] font-bold">
+          <Heart size={13} className="text-red-500" fill="currentColor" />
+          <span className={t.textPrimary}>HP</span>
+          <div className={`h-3 flex-1 overflow-hidden rounded-full ${t.track}`}>
+            <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${health.health_points}%` }} />
+          </div>
+          <span className={t.textPrimary}>{health.health_points}</span>
         </div>
-        <span className={t.textPrimary}>{health.health_points}</span>
+        <button
+          onClick={onOpenSocial}
+          aria-label="Open social"
+          className="relative flex h-[68px] w-[68px] shrink-0 flex-col items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-600/25 transition-all duration-200 active:scale-95 hover:bg-blue-700"
+        >
+          <Users size={19} strokeWidth={2.5} />
+          <span className="mt-1 text-[10px] font-bold tracking-tight">SOCIAL</span>
+          <span className={`absolute right-2 top-2 h-2 w-2 rounded-full ${socialNotification ? "bg-green-300" : "bg-blue-300"}`} />
+        </button>
       </div>
     </div>
   );
