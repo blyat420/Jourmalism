@@ -45,9 +45,11 @@ import {
 
 const SUPABASE_URL = "https://oymdanzmnpvfwzoawvua.supabase.co";
 const VERIFICATION_PATH = "/email-verified";
-const APP_URL = typeof window !== "undefined"
-  ? `${window.location.origin}${VERIFICATION_PATH}`
-  : `https://jourmalism.vercel.app${VERIFICATION_PATH}`;
+const PRODUCTION_ORIGIN = "https://jourmalism.vercel.app";
+const APP_ORIGIN = typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname)
+  ? window.location.origin
+  : PRODUCTION_ORIGIN;
+const APP_URL = `${APP_ORIGIN}${VERIFICATION_PATH}`;
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95bWRhbnptbnB2Znd6b2F3dnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNzIwMTYsImV4cCI6MjEwNDk0ODAxNn0.mHAQnKCPWzxWqV6d_M2-0hWZC8pJ3IyAjFOorgFxL4o";
 
