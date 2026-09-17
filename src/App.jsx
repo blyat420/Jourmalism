@@ -44,7 +44,10 @@ import {
 --------------------------------------------------------------- */
 
 const SUPABASE_URL = "https://oymdanzmnpvfwzoawvua.supabase.co";
-const APP_URL = "https://jourmalism.vercel.app";
+const VERIFICATION_PATH = "/email-verified";
+const APP_URL = typeof window !== "undefined"
+  ? `${window.location.origin}${VERIFICATION_PATH}`
+  : `https://jourmalism.vercel.app${VERIFICATION_PATH}`;
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95bWRhbnptbnB2Znd6b2F3dnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNzIwMTYsImV4cCI6MjEwNDk0ODAxNn0.mHAQnKCPWzxWqV6d_M2-0hWZC8pJ3IyAjFOorgFxL4o";
 
@@ -1437,43 +1440,49 @@ function Header({ t, isDark, onToggleTheme, completedCount, totalCount, user, on
         <Heart size={13} className="text-red-500" fill="currentColor" />
         <span className={t.textPrimary}>HP</span>
         <div className={`h-3 flex-1 overflow-hidden rounded-full ${t.track}`}>
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${health.health_points <= 30 ? "bg-red-500" : "bg-green-600"}`}
-            style={{ width: `${health.health_points}%` }}
-          />
+          <div className="h-full rounded-full bg-red-500 transition-all" style={{ width: `${health.health_points}%` }} />
         </div>
-        <span className={t.textSecondary}>{health.health_points}/100</span>
+        <span className={t.textPrimary}>{health.health_points}</span>
       </div>
+    </div>
+  );
+}
 
-      {/* Daily Goal Progress Bar */}
-      <div className="mt-3 flex items-stretch gap-3">
-        <div className={`min-w-0 flex-1 rounded-2xl ${t.card} border ${t.border} shadow-sm p-4`}>
-          <div className="flex items-center justify-between mb-2.5">
-            <span className={`text-sm font-medium ${t.textSecondary}`}>Daily goal</span>
-            <span className="text-sm font-semibold text-blue-600">
-              {completedCount} of {totalCount} completed
-            </span>
-          </div>
-          <div className={`h-1.5 rounded-full ${t.track} overflow-hidden`}>
-            <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-500 ease-out"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
+function EmailVerifiedScreen({ email, onGoToDashboard }) {
+  return (
+    <div className="min-h-screen bg-slate-100 px-4 py-5 sm:flex sm:items-center sm:justify-center sm:px-6">
+      <div className="relative flex min-h-[calc(100vh-2.5rem)] w-full max-w-[640px] flex-col items-center rounded-[42px] border border-slate-200 bg-white px-6 py-12 shadow-[0_20px_60px_rgba(38,64,96,0.12)] sm:min-h-[820px] sm:px-10">
+        <div className="flex h-44 w-44 items-center justify-center rounded-full border-8 border-blue-100 bg-blue-50 shadow-sm sm:h-52 sm:w-52">
+          <img src="/download (3) 4.png" alt="Jourmal verification" className="h-full w-full rounded-full object-cover" />
         </div>
-        <button
-          onClick={onOpenSocial}
-          aria-label="Open social hub"
-          className="w-[76px] shrink-0 overflow-hidden rounded-2xl transition-transform hover:scale-105 active:scale-95"
-        >
-          <img
-            src={socialNotification
-              ? "/Button-Open-Social-Leaderboard-and-Friends-notif.png"
-              : "/Button-Open-Social-Leaderboard-and-Friends-nonotif.png"}
-            alt="Social"
-            className="h-full w-full object-contain"
-          />
-        </button>
+        <div className="mt-[-22px] flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-emerald-500 text-white shadow-lg">
+          <Check size={30} strokeWidth={4} />
+        </div>
+        <p className="mt-3 text-xl font-extrabold tracking-[0.16em] text-slate-400">JOURMAL<span className="text-blue-600">.</span></p>
+
+        <div className="mt-16 text-center">
+          <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[26px] bg-emerald-500 text-white shadow-[0_12px_28px_rgba(16,185,129,0.35)]">
+            <Check size={52} strokeWidth={3.5} />
+          </div>
+          <h1 className="mt-12 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">Email Verified!</h1>
+          <p className="mx-auto mt-4 max-w-md text-lg leading-8 text-slate-500">Your account is confirmed and fully activated.<br />You are ready to start building atomic daily habits.</p>
+        </div>
+
+        <div className="mt-10 w-full max-w-[540px] rounded-[26px] border border-slate-200 bg-slate-50 p-6">
+          <div className="flex items-center gap-4 border-b border-slate-200 pb-5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><span className="text-xl">✉</span></div>
+            <div className="min-w-0 flex-1"><p className="text-sm text-slate-400">Confirmed Account</p><p className="truncate text-lg font-bold text-slate-800">{email || "Your account"}</p></div>
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-600">✓ Verified</span>
+          </div>
+          <div className="flex items-center gap-3 py-5 text-base text-slate-600"><span className="h-3 w-3 rounded-full bg-emerald-500" />Status: Active &amp; Ready<span className="ml-auto rounded-xl bg-blue-50 px-3 py-2 font-bold text-blue-600">Day 1 Streak</span></div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm leading-6 text-slate-500"><strong className="text-slate-700">What's next thou ask?</strong> Add your first habit today to establish your routine before midnight!</div>
+        </div>
+
+        <div className="mt-auto w-full max-w-[540px] pt-12 text-center">
+          <button onClick={onGoToDashboard} className="h-16 w-full rounded-2xl bg-blue-600 text-lg font-bold text-white shadow-[0_12px_24px_rgba(37,99,235,0.25)] transition hover:bg-blue-700 active:scale-[0.99]">Go to Dashboard <span className="ml-2 text-2xl">→</span></button>
+          <p className="mt-5 text-base text-slate-400">Need assistance? <span className="text-blue-600">Contact support</span></p>
+          <div className="mx-auto mt-8 h-1.5 w-40 rounded-full bg-slate-300" />
+        </div>
       </div>
     </div>
   );
@@ -1593,7 +1602,7 @@ function HabitCard({ t, habit, onToggle, onDelete, onEdit, onOpenDetails }) {
 
       <button
         onClick={(e) => {
-          e.stopPropagation(); // Prevents opening details when checking off
+          e.stopPropagation();
           onToggle(habit.id);
         }}
         onMouseDown={() => setPressed(true)}
@@ -1976,6 +1985,7 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [dataError, setDataError] = useState("");
   const [loginSuccessCat, setLoginSuccessCat] = useState(null);
+  const [showEmailVerified, setShowEmailVerified] = useState(false);
   const { toasts, show, remove } = useToast();
 
   const today = todayStr();
@@ -1983,12 +1993,32 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const session = await supabase.getSession();
+        const callbackParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const callbackAccessToken = callbackParams.get("access_token");
+        const isVerificationCallback = callbackParams.get("type") === "signup";
+        const isVerificationRoute = window.location.pathname === VERIFICATION_PATH;
+        let session = await supabase.getSession();
+
+        if (callbackAccessToken && isVerificationCallback) {
+          session = {
+            access_token: callbackAccessToken,
+            refresh_token: callbackParams.get("refresh_token"),
+            expires_in: Number(callbackParams.get("expires_in") || 3600),
+            expires_at: Math.floor(Date.now() / 1000) + Number(callbackParams.get("expires_in") || 3600),
+            token_type: callbackParams.get("token_type") || "bearer",
+          };
+          supabase.session = session;
+          localStorage.setItem("sb-session", JSON.stringify(session));
+          window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+          setShowEmailVerified(true);
+        }
+
         if (session?.access_token) {
           const user = await supabase.getUser();
           if (user) {
             setUser(user);
             await fetchUserData(user.id);
+            if (isVerificationRoute) setShowEmailVerified(true);
           }
         }
       } catch (err) {
@@ -2322,6 +2352,13 @@ export default function App() {
       setAuthView("login");
       const cat = loginSuccessCats[Math.floor(Math.random() * loginSuccessCats.length)];
       setLoginSuccessCat(cat);
+    }} />;
+  }
+
+  if (showEmailVerified) {
+    return <EmailVerifiedScreen email={user.email} onGoToDashboard={() => {
+      window.history.replaceState({}, document.title, "/");
+      setShowEmailVerified(false);
     }} />;
   }
 
