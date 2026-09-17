@@ -13,7 +13,6 @@ import {
   Code,
   Coffee,
   PenLine,
-  ImagePlus,
   Trash2,
   Flame,
   LogOut,
@@ -1726,86 +1725,18 @@ function AddHabitSheet({ t, open, editingHabit, onClose, onSave }) {
 }
 
 /* ---------------------------------------------------------------
-   Daily Journal
---------------------------------------------------------------- */
-
-function DailyJournal({ t, journal, onChangeText, onAddImage, onRemoveImage }) {
-  const fileRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
-
-  const handleFile = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploading(true);
-    try {
-      const compressed = await compressImage(file);
-      await onAddImage(compressed);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <div className="px-5 mt-2 mb-6">
-      <p className={`text-xs font-semibold ${t.textMuted} mb-2`}>Today's journal</p>
-      <div className={`rounded-2xl ${t.card} border ${t.border} shadow-sm p-4`}>
-        <textarea
-          value={journal.noteText}
-          onChange={(e) => onChangeText(e.target.value)}
-          placeholder="How did today go? Add notes or memories..."
-          rows={4}
-          className={`w-full bg-transparent outline-none resize-none text-sm ${t.textPrimary} placeholder:${t.textMuted}`}
-        />
-
-        {journal.images && journal.images.length > 0 && (
-          <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
-            {journal.images.map((src, i) => (
-              <div key={i} className="relative shrink-0">
-                <img
-                  src={src}
-                  alt={`Attachment ${i + 1}`}
-                  className="w-20 h-20 rounded-xl object-cover"
-                />
-                <button
-                  onClick={() => onRemoveImage(i)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-900 text-white flex items-center justify-center shadow-sm"
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className={`flex items-center justify-between mt-3 pt-3 border-t ${t.border}`}>
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className={`inline-flex items-center gap-1.5 text-xs font-medium ${t.textSecondary} disabled:opacity-50`}
-          >
-            <ImagePlus size={14} />
-            {uploading ? "Uploading…" : "Attach image"}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFile}
-          />
-          <span className={`text-[11px] ${t.textMuted}`}>Auto-syncs</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------
    App
 --------------------------------------------------------------- */
+
+function censorEmail(value = "") {
+  const [localPart, domain] = value.split("@");
+  if (!localPart) return "";
+
+  const censoredLocal = `${localPart[0]}${"*".repeat(Math.max(localPart.length - 3, 1))}${localPart.slice(-2)}`;
+  if (!domain) return censoredLocal;
+
+  return `${censoredLocal}${"*".repeat(Math.max(domain.length - 3, 1))}${domain.slice(-3)}`;
+}
 
 function SocialScreen({ t, user, habits, onClose, onNotificationChange }) {
   const [section, setSection] = useState("leaderboard");
@@ -1837,10 +1768,23 @@ function SocialScreen({ t, user, habits, onClose, onNotificationChange }) {
           username: request.sender_username,
           color: "blue",
         })));
-        setFriends((friendProfiles || []).map((friend) => ({
+        const friendsWithEmails = await Promise.all((friendProfiles || []).map(async (friend) => {
+          let email = friend.email;
+          if (!email) {
+            try {
+              email = await supabase.lookupEmailByUsername(friend.username);
+            } catch {
+              email = "";
+            }
+          }
+          return { ...friend, email };
+        }));
+        if (cancelled) return;
+        setFriends(friendsWithEmails.map((friend) => ({
           id: friend.id,
           name: friend.username,
           username: friend.username,
+          email: friend.email,
           streak: 0,
           online: false,
           color: "blue",
@@ -1891,7 +1835,7 @@ function SocialScreen({ t, user, habits, onClose, onNotificationChange }) {
 
   const displayName = user?.user_metadata?.username || user?.email?.split("@")[0] || "You";
   const currentStreak = habits.length ? Math.max(...habits.map((habit) => habit.streak || 0)) : 0;
-  const currentUser = { id: "me", name: displayName, username: displayName.toLowerCase(), streak: currentStreak, online: true, color: "blue" };
+  const currentUser = { id: "me", name: displayName, username: displayName.toLowerCase(), email: user?.email, streak: currentStreak, online: true, color: "blue" };
   const leaderboard = [currentUser, ...friends]
     .sort((first, second) => second.streak - first.streak)
     .map((person, index) => ({ ...person, rank: index + 1 }));
@@ -1977,7 +1921,7 @@ function SocialScreen({ t, user, habits, onClose, onNotificationChange }) {
                 <div key={person.id} className={`flex items-center gap-3 rounded-2xl border p-3 ${person.id === "me" ? "border-blue-200 bg-blue-50/70" : `${t.card} ${t.border}`}`}>
                   <span className={`w-6 text-center text-xs font-bold ${person.rank <= 3 ? "text-amber-500" : t.textMuted}`}>{person.rank <= 3 ? ["🥇", "🥈", "🥉"][person.rank - 1] : `#${person.rank}`}</span>
                   <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold ${avatarClass[person.color]}`}>{person.name.slice(0, 2).toUpperCase()}</span>
-                  <div className="min-w-0 flex-1"><p className={`truncate text-sm font-bold ${t.textPrimary}`}>{person.name}{person.id === "me" && <span className="ml-1 text-[10px] text-blue-600">(You)</span>}</p><p className={`truncate text-[11px] ${t.textMuted}`}>@{person.username}</p></div>
+                  <div className="min-w-0 flex-1"><p className={`truncate text-sm font-bold ${t.textPrimary}`}>{person.name}{person.id === "me" && <span className="ml-1 text-[10px] text-blue-600">(You)</span>}</p><p className={`truncate text-[11px] ${t.textMuted}`}>{censorEmail(person.email || person.username)}</p></div>
                   <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-500"><Flame size={12} fill="currentColor" />{person.streak}d</span>
                 </div>
               ))}
@@ -2017,7 +1961,6 @@ export default function App() {
   const { theme, setTheme, isDark, t } = useTheme();
   const [user, setUser] = useState(null);
   const [habits, setHabits] = useState([]);
-  const [journals, setJournals] = useState({});
   const [activeFilter, setActiveFilter] = useState("all");
   const [selectedHabitId, setSelectedHabitId] = useState(null); 
   const [socialOpen, setSocialOpen] = useState(false);
@@ -2033,12 +1976,9 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [dataError, setDataError] = useState("");
   const [loginSuccessCat, setLoginSuccessCat] = useState(null);
-  const journalSyncTimer = useRef(null);
   const { toasts, show, remove } = useToast();
 
   const today = todayStr();
-  const journal = journals[today] || { noteText: "", images: [] };
-
   // Check session on mount and fetch user data
   useEffect(() => {
     (async () => {
@@ -2148,21 +2088,6 @@ export default function App() {
       });
       setHabits(Object.values(habitsMap));
 
-      // Fetch journals
-      const dbJournals = await supabase
-        .from("daily_journals")
-        .select("*")
-        .eq("user_id", userId)
-        .execute();
-
-      const journalsMap = {};
-      dbJournals.forEach((j) => {
-        journalsMap[j.date] = {
-          noteText: j.note_text || "",
-          images: j.images || [],
-        };
-      });
-      setJournals(journalsMap);
     } catch (err) {
       console.error("Failed to fetch user data:", err);
       setDataError(err.message || "Unable to load your saved habits.");
@@ -2329,41 +2254,11 @@ export default function App() {
     }
   };
 
-  const setJournalText = (text) => {
-    setJournals((prev) => ({
-      ...prev,
-      [today]: { ...prev[today], noteText: text },
-    }));
-
-    // Debounced sync
-    if (journalSyncTimer.current) clearTimeout(journalSyncTimer.current);
-    journalSyncTimer.current = setTimeout(() => syncJournal(text, journal.images), 500);
-  };
-
-  const addJournalImage = async (base64) => {
-    const updated = [...(journal.images || []), base64];
-    setJournals((prev) => ({
-      ...prev,
-      [today]: { ...prev[today], images: updated },
-    }));
-    await syncJournal(journal.noteText, updated);
-  };
-
-  const removeJournalImage = async (index) => {
-    const updated = journal.images.filter((_, i) => i !== index);
-    setJournals((prev) => ({
-      ...prev,
-      [today]: { ...prev[today], images: updated },
-    }));
-    await syncJournal(journal.noteText, updated);
-  };
-
   const handleLogout = async () => {
     try {
       await supabase.logout();
       setUser(null);
       setHabits([]);
-      setJournals({});
       setAccountOpen(false);
       setAuthView("login");
     } catch (err) {
@@ -2397,29 +2292,9 @@ export default function App() {
       await supabase.logout();
       setUser(null);
       setHabits([]);
-      setJournals({});
       setAccountOpen(false);
     } catch (err) {
       show(`Failed to delete account: ${err.message}`, "error", AlertCircle);
-    }
-  };
-
-  const syncJournal = async (noteText, images) => {
-    try {
-      setSyncing(true);
-      await supabase.from("daily_journals").upsert({
-        user_id: user.id,
-        date: today,
-        note_text: noteText,
-        images,
-        updated_at: new Date().toISOString(),
-      });
-      show("Journal saved", "success", CheckCircle);
-    } catch (err) {
-      console.error("Journal sync failed:", err);
-      show("Journal save failed", "error", AlertCircle);
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -2557,14 +2432,6 @@ export default function App() {
               ))
             )}
           </div>
-
-          <DailyJournal
-            t={t}
-            journal={journal}
-            onChangeText={setJournalText}
-            onAddImage={addJournalImage}
-            onRemoveImage={removeJournalImage}
-          />
 
           {syncing && (
             <div className={`fixed top-4 right-4 px-3 py-1.5 rounded-full ${t.badge} text-xs ${t.textMuted} flex items-center gap-1.5`}>

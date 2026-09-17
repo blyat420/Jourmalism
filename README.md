@@ -1,6 +1,6 @@
 # Routine - Multi-User Habit Tracker
 
-A fast, lightweight habit tracking and journaling web app with Supabase authentication and real-time sync.
+A fast, lightweight habit tracking web app with Supabase authentication and real-time sync.
 
 ## Features
 
@@ -8,7 +8,6 @@ A fast, lightweight habit tracking and journaling web app with Supabase authenti
 - ✅ Create and track daily habits
 - ✅ 7-day completion heatmap
 - ✅ Streak counter
-- ✅ Daily journal with image attachments
 - ✅ Dark/light mode
 - ✅ Real-time sync to Supabase
 
