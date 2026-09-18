@@ -1011,7 +1011,7 @@ function StartingScreen({ t, onGetStarted, onSignIn }) {
   const [imageFailed, setImageFailed] = useState(false);
 
   return (
-    <div className={`min-h-screen ${t.canvas} flex items-center justify-center px-4 py-10 sm:px-8 lg:px-12`}>
+    <div className={`relative min-h-screen ${t.canvas} flex items-center justify-center px-4 py-10 sm:px-8 lg:px-12`}>
       <style>{`@keyframes floatBubble { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -9px); } }`}</style>
       <div className="w-full max-w-5xl grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
         <div className="relative flex min-h-[300px] items-center justify-center sm:min-h-[380px]">
@@ -1034,6 +1034,10 @@ function StartingScreen({ t, onGetStarted, onSignIn }) {
           <button onClick={onGetStarted} className="mt-9 h-14 w-full rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold shadow-lg shadow-blue-600/25 sm:max-w-md">Get Started <span className="ml-2 text-lg">→</span></button>
           <p className="text-center text-sm text-slate-500 mt-4">Already have an account? <button onClick={onSignIn} className="font-bold text-blue-600">Sign In</button></p>
         </div>
+      </div>
+
+      <div className="absolute bottom-4 left-4 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400/80">
+        v.1.
       </div>
     </div>
   );
